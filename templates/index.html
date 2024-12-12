@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Tools</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .tab-content {
+            padding: 20px;
+        }
+        .preview-image {
+            max-width: 300px;
+            max-height: 300px;
+            margin: 10px 0;
+        }
+        #downloadedImages img {
+            max-width: 200px;
+            margin: 10px;
+        }
+        .result-container {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            display: none;
+        }
+        .optimized-image {
+            max-width: 100%;
+            height: auto;
+            margin: 10px 0;
+        }
+        .stats {
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .image-card {
+            margin-bottom: 20px;
+        }
+        .image-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: contain;
+            margin-bottom: 10px;
+        }
+        .image-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+        }
+        .select-checkbox {
+            margin-right: 10px;
+        }
+        #bulkActions {
+            margin: 20px 0;
+            display: none;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .loading-content {
+            text-align: center;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <ul class="nav nav-tabs" id="myTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="optimizer-tab" data-bs-toggle="tab" data-bs-target="#optimizer" type="button" role="tab">Image Optimizer</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="remover-tab" data-bs-toggle="tab" data-bs-target="#remover" type="button" role="tab">Background Remover</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="cloner-tab" data-bs-toggle="tab" data-bs-target="#cloner" type="button" role="tab">Image Cloner</button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="myTabContent">
+            <!-- Image Optimizer Tab -->
+            <div class="tab-pane fade show active" id="optimizer" role="tabpanel">
+                <form id="optimizerForm" class="mt-4">
+                    <div class="mb-3">
+                        <label for="images" class="form-label">Select Images</label>
+                        <input type="file" class="form-control" id="images" name="images[]" accept="image/*" multiple>
+                    </div>
+                    <div class="mb-3">
+                        <div id="imagePreviewContainer" class="d-flex flex-wrap gap-3"></div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Optimize Images</button>
+                </form>
+                <div id="resultsContainer" class="mt-4"></div>
+            </div>
+
+            <!-- Background Remover Tab -->
+            <div class="tab-pane fade" id="remover" role="tabpanel">
+                <form id="removerForm" class="mt-4">
+                    <div class="mb-3">
+                        <label for="bgImages" class="form-label">Select Images</label>
+                        <input type="file" class="form-control" id="bgImages" name="images[]" accept="image/*" multiple>
+                    </div>
+                    <div class="mb-3">
+                        <div id="bgImagePreviewContainer" class="d-flex flex-wrap gap-3"></div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Remove Background</button>
+                </form>
+                <div id="bgResultsContainer" class="mt-4"></div>
+            </div>
+
+            <!-- Image Cloner Tab -->
+            <div class="tab-pane fade" id="cloner" role="tabpanel">
+                <form id="clonerForm" class="mt-4">
+                    <div class="mb-3">
+                        <label for="url" class="form-label">Website URL</label>
+                        <input type="text" class="form-control" id="url" name="url" placeholder="Enter website URL">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Clone Images</button>
+                </form>
+                <div id="downloadedImages" class="mt-4">
+                    <div class="row" id="imageGrid"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <h5 id="loadingText">Processing images...</h5>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function showLoading(text = 'Processing images...') {
+            document.getElementById('loadingText').textContent = text;
+            document.getElementById('loadingOverlay').style.display = 'flex';
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+
+        // Preview images before upload
+        document.getElementById('images').addEventListener('change', function(e) {
+            const container = document.getElementById('imagePreviewContainer');
+            container.innerHTML = '';
+            
+            Array.from(this.files).forEach(file => {
+                const preview = document.createElement('div');
+                preview.className = 'preview-card';
+                preview.style.width = '200px';
+                
+                const img = document.createElement('img');
+                img.className = 'preview-image';
+                img.src = URL.createObjectURL(file);
+                
+                const name = document.createElement('p');
+                name.className = 'text-center small mt-1 mb-0';
+                name.textContent = file.name;
+                
+                preview.appendChild(img);
+                preview.appendChild(name);
+                container.appendChild(preview);
+            });
+        });
+
+        // Handle image optimization
+        document.getElementById('optimizerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            const submitButton = this.querySelector('button[type="submit"]');
+            
+            const files = document.getElementById('images').files;
+            if (files.length === 0) {
+                alert('Please select at least one image');
+                return;
+            }
+
+            Array.from(files).forEach(file => {
+                formData.append('images[]', file);
+            });
+            
+            try {
+                submitButton.disabled = true;
+                showLoading('Optimizing images...');
+                
+                const response = await fetch('/optimize_images', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                const container = document.getElementById('resultsContainer');
+                container.innerHTML = '';
+                
+                data.results.forEach(result => {
+                    const resultCard = document.createElement('div');
+                    resultCard.className = 'card mb-3';
+                    
+                    if (result.success) {
+                        resultCard.innerHTML = `
+                            <div class="card-body">
+                                <h5 class="card-title">${result.original_name}</h5>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <img src="${result.data}" class="img-fluid" alt="Optimized image">
+                                    </div>
+                                    <div class="col-md-8">
+                                        <div class="stats">
+                                            <p>Original Size: ${result.original_size}</p>
+                                            <p>Optimized Size: ${result.size}</p>
+                                            <p>Compression Ratio: ${result.compression_ratio}</p>
+                                        </div>
+                                        <button class="btn btn-success download-btn" 
+                                                data-url="${result.data}" 
+                                                data-filename="${result.filename}">
+                                            Download
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        
+                        // Add download handler
+                        resultCard.querySelector('.download-btn').addEventListener('click', function() {
+                            const link = document.createElement('a');
+                            link.href = this.dataset.url;
+                            link.download = this.dataset.filename;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        });
+                    } else {
+                        resultCard.innerHTML = `
+                            <div class="card-body">
+                                <h5 class="card-title">${result.original_name}</h5>
+                                <div class="alert alert-danger">
+                                    Error: ${result.error}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    container.appendChild(resultCard);
+                });
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                submitButton.disabled = false;
+                hideLoading();
+            }
+        });
+
+        // Background Remover Preview
+        document.getElementById('bgImages').addEventListener('change', function(e) {
+            const container = document.getElementById('bgImagePreviewContainer');
+            container.innerHTML = '';
+            
+            Array.from(this.files).forEach(file => {
+                const preview = document.createElement('div');
+                preview.className = 'preview-card';
+                preview.style.width = '200px';
+                
+                const img = document.createElement('img');
+                img.className = 'preview-image';
+                img.src = URL.createObjectURL(file);
+                
+                const name = document.createElement('p');
+                name.className = 'text-center small mt-1 mb-0';
+                name.textContent = file.name;
+                
+                preview.appendChild(img);
+                preview.appendChild(name);
+                container.appendChild(preview);
+            });
+        });
+
+        // Handle background removal
+        document.getElementById('removerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            const submitButton = this.querySelector('button[type="submit"]');
+            
+            const files = document.getElementById('bgImages').files;
+            if (files.length === 0) {
+                alert('Please select at least one image');
+                return;
+            }
+
+            Array.from(files).forEach(file => {
+                formData.append('images[]', file);
+            });
+            
+            try {
+                submitButton.disabled = true;
+                showLoading('Removing background...');
+                
+                const response = await fetch('/remove_bg', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                const container = document.getElementById('bgResultsContainer');
+                container.innerHTML = '';
+                
+                data.results.forEach(result => {
+                    const resultCard = document.createElement('div');
+                    resultCard.className = 'card mb-3';
+                    
+                    if (result.success) {
+                        resultCard.innerHTML = `
+                            <div class="card-body">
+                                <h5 class="card-title">${result.original_name}</h5>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <img src="${result.data}" class="img-fluid" alt="Background removed">
+                                    </div>
+                                    <div class="col-md-8">
+                                        <div class="stats">
+                                            <p>Original Size: ${result.original_size}</p>
+                                            <p>Optimized Size: ${result.size}</p>
+                                            <p>Compression Ratio: ${result.compression_ratio}</p>
+                                        </div>
+                                        <button class="btn btn-success download-btn" 
+                                                data-url="${result.data}" 
+                                                data-filename="${result.filename}">
+                                            Download
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        
+                        resultCard.querySelector('.download-btn').addEventListener('click', function() {
+                            const link = document.createElement('a');
+                            link.href = this.dataset.url;
+                            link.download = this.dataset.filename;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        });
+                    } else {
+                        resultCard.innerHTML = `
+                            <div class="card-body">
+                                <h5 class="card-title">${result.original_name}</h5>
+                                <div class="alert alert-danger">
+                                    Error: ${result.error}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    container.appendChild(resultCard);
+                });
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                submitButton.disabled = false;
+                hideLoading();
+            }
+        });
+
+        // Handle image cloning
+        document.getElementById('clonerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const submitButton = this.querySelector('button[type="submit"]');
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
+            
+            try {
+                const response = await fetch('/clone-images', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    const container = document.getElementById('imageGrid');
+                    container.innerHTML = '';
+                    
+                    // Add bulk actions
+                    const bulkActions = document.createElement('div');
+                    bulkActions.id = 'bulkActions';
+                    bulkActions.className = 'col-12 mb-3';
+                    bulkActions.innerHTML = `
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <input type="checkbox" id="selectAll" class="form-check-input me-2">
+                                        <label for="selectAll">Select All</label>
+                                    </div>
+                                    <button id="downloadSelected" class="btn btn-success" disabled>
+                                        Download Selected (<span id="selectedCount">0</span>)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    container.parentElement.insertBefore(bulkActions, container);
+                    bulkActions.style.display = 'block';
+
+                    // Add images
+                    data.images.forEach((image, index) => {
+                        const col = document.createElement('div');
+                        col.className = 'col-md-4 col-sm-6';
+                        col.innerHTML = `
+                            <div class="card image-card">
+                                <div class="card-body">
+                                    <div class="form-check">
+                                        <input type="checkbox" class="form-check-input image-select" data-path="${image.path}" data-url="${image.url}">
+                                    </div>
+                                    <img src="${image.path}" class="card-img-top" alt="Cloned image">
+                                    <div class="image-actions">
+                                        <small>${image.filename}</small>
+                                        <button class="btn btn-sm btn-primary download-single" data-path="${image.path}" data-url="${image.url}">
+                                            Download
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        container.appendChild(col);
+                    });
+
+                    // Handle select all
+                    const selectAll = document.getElementById('selectAll');
+                    const checkboxes = document.querySelectorAll('.image-select');
+                    const downloadSelected = document.getElementById('downloadSelected');
+                    const selectedCount = document.getElementById('selectedCount');
+
+                    selectAll.addEventListener('change', function() {
+                        checkboxes.forEach(checkbox => {
+                            checkbox.checked = this.checked;
+                        });
+                        updateSelectedCount();
+                    });
+
+                    // Handle individual selections
+                    checkboxes.forEach(checkbox => {
+                        checkbox.addEventListener('change', updateSelectedCount);
+                    });
+
+                    // Handle download selected
+                    downloadSelected.addEventListener('click', function() {
+                        const selectedImages = Array.from(checkboxes)
+                            .filter(checkbox => checkbox.checked)
+                            .forEach(checkbox => {
+                                downloadImage(checkbox.dataset.path, checkbox.dataset.url);
+                            });
+                    });
+
+                    // Handle single downloads
+                    document.querySelectorAll('.download-single').forEach(button => {
+                        button.addEventListener('click', function() {
+                            downloadImage(this.dataset.path, this.dataset.url);
+                        });
+                    });
+
+                    function updateSelectedCount() {
+                        const selected = document.querySelectorAll('.image-select:checked').length;
+                        selectedCount.textContent = selected;
+                        downloadSelected.disabled = selected === 0;
+                    }
+
+                    function downloadImage(path, url) {
+                        const filename = path.split('/').pop();
+                        fetch(path)
+                            .then(response => response.blob())
+                            .then(blob => {
+                                const url = window.URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = filename;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                window.URL.revokeObjectURL(url);
+                            })
+                            .catch(error => {
+                                console.error('Download failed:', error);
+                                // Fallback to direct URL if local download fails
+                                window.open(url, '_blank');
+                            });
+                    }
+
+                } else {
+                    alert(data.error || 'Error cloning images');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Clone Images';
+            }
+        });
+    </script>
+</body>
+</html> 
